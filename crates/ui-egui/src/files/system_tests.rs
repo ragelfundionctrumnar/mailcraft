@@ -117,3 +117,28 @@ fn a_calendar_file_dropped_on_the_window_is_imported_without_a_question() {
     assert_eq!(a.session.mailbox.events.len(), events + 1);
     let _ = std::fs::remove_dir_all(dir);
 }
+
+/// A picture picked for a signature whose page was left while the picker was open (the picker
+/// needn't be modal) is refused where the owner can see it, the status bar, and nothing is left
+/// for the page to say the next time it is opened.
+#[test]
+fn a_picture_picked_after_the_signature_page_was_left_is_refused_in_the_status_bar() {
+    let mut a = app();
+    a.execute("signature.set", json!({"name": "Mine", "text": "Avery"})).unwrap();
+    a.execute("signature.open", json!({"name": "Mine"})).unwrap();
+    let (tx, rx) = std::sync::mpsc::channel();
+    a.file_dialog = Some(super::PendingDialog { rx, after: super::AfterPick::Open("picture".into()) });
+    a.execute("signature.close", json!({"discard": true})).unwrap();
+    assert!(a.session.signature_edit.is_none());
+    let dir = scratch("picture");
+    let path = dir.join("logo.png");
+    std::fs::write(&path, b"not a picture at all").unwrap();
+    tx.send(Some(path.to_string_lossy().to_string())).unwrap();
+    let r = super::poll(&mut a).expect("the answer is picked up");
+    let _ = std::fs::remove_dir_all(&dir);
+    let why = r.expect_err("refused: no signature is open");
+    let said = a.status_msg.as_ref().map(|(s, _)| s.as_str()).unwrap_or_default();
+    assert_eq!(said, why, "the status bar says the refusal");
+    assert!(a.signature_note.is_none(), "nothing kept for the page");
+    assert!(a.dialog.is_none(), "no message box");
+}

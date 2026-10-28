@@ -3718,19 +3718,25 @@ impl MailApp {
             self.leave_signature();
         }
         #[cfg(not(target_arch = "wasm32"))]
-        for f in ctx.input(|i| i.raw.dropped_files.clone()) {
-            // A file let go over the window is the owner's doing.
-            self.by_hand = true;
-            let path = f.path().to_string_lossy().to_string();
-            // A picture dropped on File › Signatures goes into the signature open there. Several
-            // files go in one after another; the first that can't stops the rest, so its reason
-            // stays on the page.
-            if signatures && self.session.signature_edit.is_some() {
-                if !signatures::add_picture(self, json!({"path": path})) {
-                    break;
+        {
+            // Of several pictures dropped at once, every one that can go in does, and the page
+            // says why the first that couldn't didn't (a later one's success would clear it).
+            let mut refused = None;
+            for f in ctx.input(|i| i.raw.dropped_files.clone()) {
+                // A file let go over the window is the owner's doing.
+                self.by_hand = true;
+                let path = f.path().to_string_lossy().to_string();
+                // A picture dropped on File › Signatures goes into the signature open there.
+                if signatures && self.session.signature_edit.is_some() {
+                    if !signatures::add_picture(self, json!({"path": path})) && refused.is_none() {
+                        refused = self.signature_note.take();
+                    }
+                } else {
+                    self.open_path(&path);
                 }
-            } else {
-                self.open_path(&path);
+            }
+            if refused.is_some() {
+                self.signature_note = refused;
             }
         }
         self.by_hand = false;
