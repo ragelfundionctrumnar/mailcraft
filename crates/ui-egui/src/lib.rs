@@ -3697,6 +3697,12 @@ impl MailApp {
         }
         self.poll_graph_switch_copy();
         self.tick_graph_switch();
+        // The signature is left before a picker's answer is picked up, so that a picture picked
+        // for a page that was left meanwhile finds it closed (`files::opened_path`).
+        let signatures = self.ui.backstage && self.ui.backstage_page == "signatures";
+        if std::mem::replace(&mut self.signatures_shown, signatures) && !signatures {
+            self.leave_signature();
+        }
         let _ = files::poll(self);
         files::drain_inbox(self);
         opening::poll_ahead(self, ctx);
@@ -3712,10 +3718,6 @@ impl MailApp {
             // Nothing is happening: look again in a while, in case a Send/Receive round is due or
             // something waits to go out.
             ctx.request_repaint_after(std::time::Duration::from_millis(1_500));
-        }
-        let signatures = self.ui.backstage && self.ui.backstage_page == "signatures";
-        if std::mem::replace(&mut self.signatures_shown, signatures) && !signatures {
-            self.leave_signature();
         }
         #[cfg(not(target_arch = "wasm32"))]
         {
