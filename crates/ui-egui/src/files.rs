@@ -201,10 +201,13 @@ fn opened_path(app: &mut MailApp, purpose: &str, path: &str) -> Result<Value, St
         "mailbox" => app.run("file.open", json!({"path": path})),
         "attach" => app.run("compose.attach", json!({"path": path})),
         "bodyPicture" => app.run("insert.picture", json!({"path": path})),
-        "picture" => {
+        // (The page says what can't go in; once the page was left while the picker was open,
+        // the status bar does, as for any command.)
+        "picture" if app.session.signature_edit.is_some() => {
             crate::signatures::add_picture(app, json!({"path": path}));
             return Ok(json!({"picture": path}));
         }
+        "picture" => app.run("signature.picture.add", json!({"path": path})),
         _ => app.run("file.import", json!({"path": path})),
     };
     // (A mailbox goes into Recent, and File closes, once it is open: `MailApp::run`.)

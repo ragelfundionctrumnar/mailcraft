@@ -1590,7 +1590,10 @@ fn a_picture_too_big_for_a_signature_as_it_is_is_made_smaller_by_the_menu_and_ct
     settle(&mut h, 2);
     let pictures = |h: &Window| h.state().session.signature_edit.as_ref().unwrap().signature.pictures().len();
     let before = pictures(&h);
-    frame(&mut h, vec![Event::Paste(String::new())]);
+    // (The key comes with the paste, as the backend sends Ctrl+V: the owner's doing, so a
+    // refusal would be a message box.)
+    let key = Event::Key { key: Key::V, physical_key: None, pressed: true, repeat: false, modifiers: Modifiers::COMMAND };
+    frame(&mut h, vec![key, Event::Paste(String::new())]);
     settle(&mut h, 3);
     assert_eq!(pictures(&h) - before, 1, "a paste with no text");
     assert!(h.state().dialog.is_none(), "a paste with no text: no message box");
@@ -1655,7 +1658,7 @@ impl egui::DroppedFile for Dropped {
 }
 
 #[test]
-fn a_drop_of_several_files_on_the_signature_stops_at_the_first_that_cannot_go_in_and_says_why() {
+fn a_drop_of_several_files_on_the_signature_adds_what_can_go_in_and_says_why_the_first_that_cannot_did_not() {
     let dir = std::env::temp_dir().join(format!("mailcraft-signature-drop-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&dir);
     std::fs::create_dir_all(&dir).unwrap();
@@ -1671,19 +1674,21 @@ fn a_drop_of_several_files_on_the_signature_stops_at_the_first_that_cannot_go_in
         settle(&mut h, 3);
         h
     };
-    // The first can't go in: the second isn't added, and the page says why the first wasn't.
+    // The first can't go in: the second is added all the same, and the page says why the first
+    // wasn't, not cleared by the second going in.
     let h = drop(&[&bad, &good]);
     let pictures = h.state().session.signature_edit.as_ref().unwrap().signature.pictures().len();
     let note = h.state().signature_note.clone();
     let dialog = h.state().dialog.is_some();
-    // Two that can both go in.
-    let both = drop(&[&good, &other]).state().session.signature_edit.as_ref().unwrap().signature.pictures().len();
+    // Two that can both go in: nothing to say.
+    let h = drop(&[&good, &other]);
+    let both = (h.state().session.signature_edit.as_ref().unwrap().signature.pictures().len(), h.state().signature_note.clone());
     let _ = std::fs::remove_dir_all(&dir);
-    assert_eq!(pictures, 0, "nothing is added");
+    assert_eq!(pictures, 1, "the one that can go in is added");
     let note = note.expect("the page's note");
     assert_eq!((note.error, note.text.as_str()), (true, "a signature's pictures are PNG, JPEG or GIF (many mail programs can't show other kinds)"));
     assert!(!dialog, "no message box");
-    assert_eq!(both, 2, "two that can go in both go in");
+    assert_eq!((both.0, both.1.map(|n| n.text)), (2, None), "two that can go in both go in");
 }
 
 #[test]
