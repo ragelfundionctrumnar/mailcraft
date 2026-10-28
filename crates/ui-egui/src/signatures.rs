@@ -67,10 +67,10 @@ const MAX_SOURCE_BYTES: u64 = 32 * 1024 * 1024;
 
 /// Add a picture to the open signature (`path` or `data`, as `signature.picture.add` takes them):
 /// one over the cap is made smaller to fit; what can't be added is said on the page, which is
-/// all the owner sees (the status bar is hidden behind File).
-pub(crate) fn add_picture(app: &mut MailApp, params: serde_json::Value) {
+/// all the owner sees (the status bar is hidden behind File). Whether a picture went in.
+pub(crate) fn add_picture(app: &mut MailApp, params: serde_json::Value) -> bool {
     app.signature_note = None;
-    let Err(refused) = app.run("signature.picture.add", params.clone()) else { return };
+    let Err(refused) = app.run_or_else("signature.picture.add", params.clone()) else { return true };
     let (stem, bytes) = match source(&params) {
         Some(s) => s,
         None => return refuse(app, refused),
@@ -81,17 +81,19 @@ pub(crate) fn add_picture(app: &mut MailApp, params: serde_json::Value) {
     if let Some(alt) = params.get("alt") {
         again["alt"] = alt.clone();
     }
-    match app.run("signature.picture.add", again) {
+    match app.run_or_else("signature.picture.add", again) {
         Ok(_) => {
             let text = crate::i18n::fmt(tl!("The picture was too big, so it was made smaller ({w} px wide)."), &[("w", &w.to_string())]);
             app.signature_note = Some(Note { text, error: false });
+            true
         }
-        Err(_) => refuse(app, refused),
+        Err(why) => refuse(app, why),
     }
 }
 
-fn refuse(app: &mut MailApp, why: String) {
+fn refuse(app: &mut MailApp, why: String) -> bool {
     app.signature_note = Some(Note { text: why, error: true });
+    false
 }
 
 /// The picture's name without its extension, and its bytes, from a file or from the data.

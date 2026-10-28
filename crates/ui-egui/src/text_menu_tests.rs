@@ -1593,6 +1593,97 @@ fn a_picture_too_big_for_a_signature_as_it_is_is_made_smaller_by_the_menu_and_ct
     frame(&mut h, vec![Event::Paste(String::new())]);
     settle(&mut h, 3);
     assert_eq!(pictures(&h) - before, 1, "a paste with no text");
+    assert!(h.state().dialog.is_none(), "a paste with no text: no message box");
+}
+
+#[test]
+fn a_picture_made_smaller_and_added_by_paste_picture_brings_no_message_box() {
+    // Clicked by hand, so a refusal would be said in a message box: the first try's, which the
+    // smaller picture put right, is not.
+    let board = Board::default();
+    board.0.borrow_mut().image = Some(crate::tests::big_png(400));
+    let mut h = signature_page(&board);
+    let at = h.get_by_label("Paste Picture").rect().center();
+    click(&mut h, at, PointerButton::Primary);
+    settle(&mut h, 3);
+    let pictures = h.state().session.signature_edit.as_ref().unwrap().signature.pictures().len();
+    assert_eq!(pictures, 1, "the picture is added");
+    let note = h.state().signature_note.clone().expect("the page's note");
+    assert!(!note.error && note.text.starts_with("The picture was too big, so it was made smaller"), "{note:?}");
+    let refused = match &h.state().dialog {
+        Some(Dialog::Refused { text }) => Some(text.clone()),
+        _ => None,
+    };
+    assert_eq!(refused, None, "no message box");
+    assert!(h.state().dialog.is_none(), "nothing else opened");
+}
+
+#[test]
+fn a_picture_made_smaller_for_a_full_signature_is_refused_on_the_page_for_being_one_too_many() {
+    // Too big as it is, and once made smaller one more than a signature holds: the page says the
+    // second, which is why it was not added, and no message box says anything.
+    use mailcraft_model::signature::MAX_PICTURES;
+    let board = Board::default();
+    board.0.borrow_mut().image = Some(crate::tests::big_png(400));
+    let mut h = signature_page(&board);
+    let small = crate::files::base64_lite::encode(&png());
+    for _ in 0..MAX_PICTURES {
+        h.state_mut().execute("signature.picture.add", json!({"data": small, "file": "dot.png"})).unwrap();
+    }
+    settle(&mut h, 2);
+    let at = h.get_by_label("Paste Picture").rect().center();
+    click(&mut h, at, PointerButton::Primary);
+    settle(&mut h, 3);
+    let pictures = h.state().session.signature_edit.as_ref().unwrap().signature.pictures().len();
+    assert_eq!(pictures, MAX_PICTURES, "nothing is added");
+    let note = h.state().signature_note.clone().expect("the page's note");
+    assert_eq!((note.error, note.text.as_str()), (true, format!("a signature holds at most {MAX_PICTURES} pictures").as_str()));
+    assert!(h.state().dialog.is_none(), "no message box");
+}
+
+/// A file let go over the window, as the system's backend hands one over.
+#[derive(Debug)]
+struct Dropped(std::path::PathBuf);
+
+impl egui::DroppedFile for Dropped {
+    fn path(&self) -> &std::path::Path {
+        &self.0
+    }
+    fn bytes(&self) -> Result<Vec<u8>, String> {
+        std::fs::read(&self.0).map_err(|e| e.to_string())
+    }
+}
+
+#[test]
+fn a_drop_of_several_files_on_the_signature_stops_at_the_first_that_cannot_go_in_and_says_why() {
+    let dir = std::env::temp_dir().join(format!("mailcraft-signature-drop-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    let (bad, good, other) = (dir.join("bad.png"), dir.join("good.png"), dir.join("other.png"));
+    std::fs::write(&bad, b"not a picture at all").unwrap();
+    std::fs::write(&good, png()).unwrap();
+    std::fs::write(&other, png()).unwrap();
+    let drop = |files: &[&std::path::PathBuf]| {
+        let mut h = signature_page(&Board::default());
+        let files = files.iter().map(|p| std::sync::Arc::new(Dropped(p.to_path_buf())) as egui::DroppedFileHandle);
+        h.input_mut().dropped_files.extend(files);
+        h.step();
+        settle(&mut h, 3);
+        h
+    };
+    // The first can't go in: the second isn't added, and the page says why the first wasn't.
+    let h = drop(&[&bad, &good]);
+    let pictures = h.state().session.signature_edit.as_ref().unwrap().signature.pictures().len();
+    let note = h.state().signature_note.clone();
+    let dialog = h.state().dialog.is_some();
+    // Two that can both go in.
+    let both = drop(&[&good, &other]).state().session.signature_edit.as_ref().unwrap().signature.pictures().len();
+    let _ = std::fs::remove_dir_all(&dir);
+    assert_eq!(pictures, 0, "nothing is added");
+    let note = note.expect("the page's note");
+    assert_eq!((note.error, note.text.as_str()), (true, "a signature's pictures are PNG, JPEG or GIF (many mail programs can't show other kinds)"));
+    assert!(!dialog, "no message box");
+    assert_eq!(both, 2, "two that can go in both go in");
 }
 
 #[test]

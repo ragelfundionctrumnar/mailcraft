@@ -3723,9 +3723,13 @@ impl MailApp {
             // A file let go over the window is the owner's doing.
             self.by_hand = true;
             let path = f.path().to_string_lossy().to_string();
-            // A picture dropped on File › Signatures goes into the signature open there.
+            // A picture dropped on File › Signatures goes into the signature open there. Several
+            // files go in one after another; the first that can't stops the rest, so its reason
+            // stays on the page.
             if signatures && self.session.signature_edit.is_some() {
-                signatures::add_picture(self, json!({"path": path}));
+                if !signatures::add_picture(self, json!({"path": path})) {
+                    break;
+                }
             } else {
                 self.open_path(&path);
             }
