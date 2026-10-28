@@ -9846,6 +9846,11 @@ msgid "The picture was too big, so it was made smaller ({w} px wide)."
 msgstr "Das Bild war zu groß und wurde verkleinert ({w} px breit)."
 
 #. interface
+#: crates/ui-egui/src/files.rs
+msgid "The picture wasn't added: File › Signatures was left before it was picked."
+msgstr ""
+
+#. interface
 #: crates/ui-egui/src/account_setup.rs
 #, fuzzy
 msgid "The port; leave it empty for the usual one"

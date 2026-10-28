@@ -1658,6 +1658,37 @@ impl egui::DroppedFile for Dropped {
 }
 
 #[test]
+fn a_picture_picked_in_the_frame_the_signature_page_is_left_is_refused_and_not_added() {
+    // The owner goes to another page of File while the picker is open, and its answer comes with
+    // the first frame after: the signature is left before the answer is picked up, so the
+    // picture is not added to a signature being closed, and a message box says so over File.
+    let dir = std::env::temp_dir().join(format!("mailcraft-signature-pick-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    let path = dir.join("logo.png");
+    std::fs::write(&path, png()).unwrap();
+    let mut h = signature_page(&Board::default());
+    let name = h.state().session.signature_edit.as_ref().unwrap().signature.name.clone();
+    let (tx, rx) = std::sync::mpsc::channel();
+    h.state_mut().file_dialog = Some(crate::files::PendingDialog { rx, after: crate::files::AfterPick::Open("picture".into()) });
+    h.state_mut().execute("ui.backstage", json!({"value": true, "page": "options"})).unwrap();
+    tx.send(Some(path.to_string_lossy().to_string())).unwrap();
+    settle(&mut h, 3);
+    let _ = std::fs::remove_dir_all(&dir);
+    let a = h.state();
+    assert!(a.session.signature_edit.is_none(), "the signature was left");
+    let kept = a.session.mailbox.signatures.iter().find(|s| s.name == name).expect("the signature kept");
+    assert_eq!(kept.pictures().len(), 0, "not added to a signature being closed");
+    let refused = match &a.dialog {
+        Some(Dialog::Refused { text }) => Some(text.as_str()),
+        _ => None,
+    };
+    assert_eq!(refused, Some("The picture wasn't added: File › Signatures was left before it was picked."), "said over File");
+    assert!(a.signature_note.is_none(), "nothing kept for the page");
+    assert!(a.ui.backstage, "File stays open");
+}
+
+#[test]
 fn a_drop_of_several_files_on_the_signature_adds_what_can_go_in_and_says_why_the_first_that_cannot_did_not() {
     let dir = std::env::temp_dir().join(format!("mailcraft-signature-drop-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&dir);

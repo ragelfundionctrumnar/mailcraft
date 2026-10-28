@@ -39,8 +39,8 @@ pub(crate) enum AfterPick {
 }
 
 pub struct PendingDialog {
-    rx: Receiver<Option<String>>,
-    after: AfterPick,
+    pub(crate) rx: Receiver<Option<String>>,
+    pub(crate) after: AfterPick,
 }
 
 /// Commands that write a file, and the name they suggest.
@@ -201,13 +201,18 @@ fn opened_path(app: &mut MailApp, purpose: &str, path: &str) -> Result<Value, St
         "mailbox" => app.run("file.open", json!({"path": path})),
         "attach" => app.run("compose.attach", json!({"path": path})),
         "bodyPicture" => app.run("insert.picture", json!({"path": path})),
-        // (The page says what can't go in; once the page was left while the picker was open,
-        // the status bar does, as for any command.)
+        // (The page says what can't go in. Once the page was left while the picker was open,
+        // the signature is closed, and a message box says so: the status bar is hidden while
+        // another page of File is open, and nothing is left for the page to say later.)
         "picture" if app.session.signature_edit.is_some() => {
             crate::signatures::add_picture(app, json!({"path": path}));
             return Ok(json!({"picture": path}));
         }
-        "picture" => app.run("signature.picture.add", json!({"path": path})),
+        "picture" => {
+            let why = tl!("The picture wasn't added: File › Signatures was left before it was picked.").to_string();
+            app.refused = Some(why.clone());
+            return Err(why);
+        }
         _ => app.run("file.import", json!({"path": path})),
     };
     // (A mailbox goes into Recent, and File closes, once it is open: `MailApp::run`.)
